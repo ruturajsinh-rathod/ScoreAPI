@@ -18,18 +18,10 @@ tessdata_prefix = os.getenv("TESSDATA_PREFIX")
 if tessdata_prefix:
     os.environ["TESSDATA_PREFIX"] = tessdata_prefix
 
-# Path to the input file (can be a scanned sheet music PDF or an image like PNG/JPG)
-input_file = Path(os.getenv("INPUT_FILE", "default.pdf"))
-output_dir = Path(os.getenv("OUTPUT_DIR", "output"))
 audiveris_bin = Path(os.getenv("AUDIVERIS_BIN", "/opt/audiveris/bin/Audiveris"))
 soundfont_path = Path(
     os.getenv("SOUNDFONT_PATH", "/usr/share/sounds/sf2/FluidR3_GM.sf2")
 )
-
-strategy = os.getenv("STRATEGY", None)
-
-left_hand = os.getenv("LEFT_HAND", "False").lower() == "true"
-right_hand = os.getenv("RIGHT_HAND", "False").lower() == "true"
 
 # === Logging setup ===
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
