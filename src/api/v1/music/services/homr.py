@@ -1,12 +1,13 @@
-import time
+import os
 import shutil
 import subprocess
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-import os
+
 from music21 import converter, tempo
 from pdf2image import convert_from_path
-from concurrent.futures import ThreadPoolExecutor
-import sys
 
 # Disable GPU
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
@@ -15,10 +16,12 @@ ROOT_DIR = Path("/home/mind/Desktop/fastapi-demo-app/ScoreAPI")
 OUTPUT_DIR = ROOT_DIR / "output"
 IMG_DIR = OUTPUT_DIR / "images"
 
+
 def prepare_image_dir():
     if IMG_DIR.exists():
         shutil.rmtree(IMG_DIR)
     IMG_DIR.mkdir(parents=True)
+
 
 def pdf_to_images(pdf_path: Path):
     images = convert_from_path(str(pdf_path), dpi=300)
@@ -29,13 +32,14 @@ def pdf_to_images(pdf_path: Path):
         img_paths.append(img_path)
     return img_paths
 
+
 def run_homr(img_path: Path) -> Path:
     print(f"🎵 Running HOMR on: {img_path.name}")
     result = subprocess.run(
         [sys.executable, "-m", "homr.main", str(img_path)],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True
+        text=True,
     )
     if result.returncode != 0:
         raise RuntimeError(f"HOMR failed for {img_path.name}: {result.stderr}")
@@ -46,7 +50,10 @@ def run_homr(img_path: Path) -> Path:
     print(f"✅ HOMR done: {img_path.name}")
     return xml_path
 
-def xml_to_midi_mp3(xml_path: Path, sf2_path: Path, bpm: int, transpose_interval: int = 0) -> Path:
+
+def xml_to_midi_mp3(
+    xml_path: Path, sf2_path: Path, bpm: int, transpose_interval: int = 0
+) -> Path:
     midi = xml_path.with_suffix(".mid")
     wav = xml_path.with_suffix(".wav")
     mp3 = xml_path.with_suffix(".mp3")
@@ -64,25 +71,47 @@ def xml_to_midi_mp3(xml_path: Path, sf2_path: Path, bpm: int, transpose_interval
     score.write("midi", fp=str(midi))
 
     # MIDI → WAV
-    subprocess.run(["fluidsynth", "-ni", str(sf2_path), str(midi), "-F", str(wav)], check=True)
+    subprocess.run(
+        ["fluidsynth", "-ni", str(sf2_path), str(midi), "-F", str(wav)], check=True
+    )
     # WAV → MP3
     subprocess.run(["ffmpeg", "-y", "-i", str(wav), str(mp3)], check=True)
     print(f"🟢 Done MP3: {xml_path.name}")
 
     return mp3
 
+
 def merge_mp3s(mp3_files: list[Path], output_path: Path):
     concat_file = output_path.with_suffix(".txt")
     with open(concat_file, "w") as f:
         for mp3 in mp3_files:
             f.write(f"file '{mp3.resolve()}'\n")
-    subprocess.run([
-        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-        "-i", str(concat_file), "-c", "copy", str(output_path)
-    ], check=True)
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(concat_file),
+            "-c",
+            "copy",
+            str(output_path),
+        ],
+        check=True,
+    )
     concat_file.unlink()
 
-def main(pdf_path: Path, sf2_path: Path, bpm: int = 120, max_workers: int = 4, transpose_interval: int = 0):
+
+def main(
+    pdf_path: Path,
+    sf2_path: Path,
+    bpm: int = 120,
+    max_workers: int = 4,
+    transpose_interval: int = 0,
+):
     start_time = time.time()
     prepare_image_dir()
     img_paths = pdf_to_images(pdf_path)
@@ -102,9 +131,12 @@ def main(pdf_path: Path, sf2_path: Path, bpm: int = 120, max_workers: int = 4, t
 
     # --- Convert MusicXML → MP3 in parallel using threads ---
     mp3_files = []
+
     def worker(xml):
         try:
-            return xml_to_midi_mp3(xml, sf2_path, bpm, transpose_interval=transpose_interval)
+            return xml_to_midi_mp3(
+                xml, sf2_path, bpm, transpose_interval=transpose_interval
+            )
         except Exception as e:
             print(f"⚠️ Error converting {xml.name}: {e}")
             return None

@@ -1,14 +1,15 @@
-from dotenv import load_dotenv
-import os
-import subprocess
-import shutil
 import logging
-from PIL import Image
+import os
+import shutil
+import subprocess
 from pathlib import Path
-from music21 import converter, stream, tempo, chord, note
+
+import fitz  # PyMuPDF
+from dotenv import load_dotenv
+from music21 import chord, converter, note, stream, tempo
 from natsort import natsorted
 from pdf2image import convert_from_path
-import fitz  # PyMuPDF
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps, ImageStat
 
 load_dotenv()
 
@@ -17,15 +18,14 @@ tessdata_prefix = os.getenv("TESSDATA_PREFIX")
 if tessdata_prefix:
     os.environ["TESSDATA_PREFIX"] = tessdata_prefix
 
-# Get config from .env or fallback
-
 # Path to the input file (can be a scanned sheet music PDF or an image like PNG/JPG)
 input_file = Path(os.getenv("INPUT_FILE", "default.pdf"))
 output_dir = Path(os.getenv("OUTPUT_DIR", "output"))
 audiveris_bin = Path(os.getenv("AUDIVERIS_BIN", "/opt/audiveris/bin/Audiveris"))
-soundfont_path = Path(os.getenv("SOUNDFONT_PATH", "/usr/share/sounds/sf2/FluidR3_GM.sf2"))
+soundfont_path = Path(
+    os.getenv("SOUNDFONT_PATH", "/usr/share/sounds/sf2/FluidR3_GM.sf2")
+)
 
-# transpose_interval = int(os.getenv("TRANSPOSE_INTERVAL", 0))
 strategy = os.getenv("STRATEGY", None)
 
 left_hand = os.getenv("LEFT_HAND", "False").lower() == "true"
@@ -35,23 +35,21 @@ right_hand = os.getenv("RIGHT_HAND", "False").lower() == "true"
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger()
 
+
 # === Dependency check ===
 def check_dependencies():
     """
-        Check if all required binaries and files exist.
+    Check if all required binaries and files exist.
 
-        Verifies:
-        - Audiveris executable exists at the given path.
-        - SoundFont file exists.
-        - Required CLI tools are installed: `fluidsynth`, `ffmpeg`.
+    Verifies:
+    - Audiveris executable exists at the given path.
+    - SoundFont file exists.
+    - Required CLI tools are installed: `fluidsynth`, `ffmpeg`.
 
-        Exits the script with an error log if any are missing.
-        """
+    Exits the script with an error log if any are missing.
+    """
 
-    for name, path in [
-        ("Audiveris", audiveris_bin),
-        ("SoundFont", soundfont_path)
-    ]:
+    for name, path in [("Audiveris", audiveris_bin), ("SoundFont", soundfont_path)]:
         if not path.exists():
             log.error(f"{name} not found: {path}")
             exit(1)
@@ -59,6 +57,7 @@ def check_dependencies():
         if shutil.which(binary) is None:
             log.error(f"{binary} not found. Please install it.")
             exit(1)
+
 
 def preprocess_images(input_path: Path, temp_dir: Path):
     temp_dir.mkdir(exist_ok=True)
@@ -81,7 +80,6 @@ def preprocess_images(input_path: Path, temp_dir: Path):
 
     return images
 
-from PIL import ImageEnhance, ImageOps, ImageFilter, ImageStat
 
 def enhance_image(img_path: Path):
     img = Image.open(img_path).convert("L")
@@ -98,7 +96,7 @@ def enhance_image(img_path: Path):
 
     # Step 3: Binarize
     threshold = 180
-    img = img.point(lambda x: 255 if x > threshold else 0, '1')
+    img = img.point(lambda x: 255 if x > threshold else 0, "1")
 
     # Final conversion back to grayscale
     img = img.convert("L")
@@ -110,27 +108,28 @@ def resize_image(img_path: Path, target_width=2480):
     img = Image.open(img_path)
     if img.width >= target_width:
         return  # already large enough
-    w_percent = (target_width / float(img.size[0]))
+    w_percent = target_width / float(img.size[0])
     h_size = int((float(img.size[1]) * float(w_percent)))
     img = img.resize((target_width, h_size), Image.LANCZOS)
     img.save(img_path)
 
+
 # === Convert input to images ===
 def convert_to_images(input_path: Path, temp_dir: Path) -> list[Path]:
     """
-        Convert a PDF file or copy a single image into a temporary image directory.
+    Convert a PDF file or copy a single image into a temporary image directory.
 
-        Parameters:
-            input_path (Path): Path to input PDF or image.
-            temp_dir (Path): Directory to store output images.
+    Parameters:
+        input_path (Path): Path to input PDF or image.
+        temp_dir (Path): Directory to store output images.
 
-        Returns:
-            list[Path]: List of generated or copied image paths.
+    Returns:
+        list[Path]: List of generated or copied image paths.
 
-        Notes:
-        - PDFs are split into 400 DPI grayscale PNGs.
-        - Single image files (JPG, PNG) are copied and renamed as page_001.png.
-        """
+    Notes:
+    - PDFs are split into 400 DPI grayscale PNGs.
+    - Single image files (JPG, PNG) are copied and renamed as page_001.png.
+    """
 
     temp_dir.mkdir(parents=True, exist_ok=True)
     image_paths = []
@@ -148,6 +147,7 @@ def convert_to_images(input_path: Path, temp_dir: Path) -> list[Path]:
         shutil.copy(input_path, img_path)
         image_paths.append(img_path)
     return image_paths
+
 
 # === Run Audiveris ===
 def run_audiveris(images: list[Path], out_dir: Path):
@@ -172,15 +172,18 @@ def run_audiveris(images: list[Path], out_dir: Path):
                     str(audiveris_bin),
                     "-batch",
                     "-export",
-                    "-output", str(out_dir),
-                    *map(str, images)  # Unpacks each image path
+                    "-output",
+                    str(out_dir),
+                    *map(str, images),  # Unpacks each image path
                 ],
                 check=True,
                 stdout=logfile,
-                stderr=subprocess.STDOUT
+                stderr=subprocess.STDOUT,
             )
     except subprocess.CalledProcessError:
-        log.warning("No MusicXML from batch — falling back to per-image Audiveris mode...")
+        log.warning(
+            "No MusicXML from batch — falling back to per-image Audiveris mode..."
+        )
 
         # === Fallback: Per-image mode ===
         for img in images:
@@ -193,32 +196,38 @@ def run_audiveris(images: list[Path], out_dir: Path):
                             str(audiveris_bin),
                             "-batch",
                             "-export",
-                            "-output", str(out_dir),
-                            str(img)
+                            "-output",
+                            str(out_dir),
+                            str(img),
                         ],
                         check=True,
                         stdout=logfile,
-                        stderr=subprocess.STDOUT
+                        stderr=subprocess.STDOUT,
                     )
             except subprocess.CalledProcessError:
                 log.warning(f"Audiveris failed for {img.name}")
 
+
 # === MuseScore fallback ===
 def try_musescore_fallback(input_file: Path, out_dir: Path) -> list[Path]:
     """
-        Fallback method to convert a PDF to MusicXML using MuseScore's CLI export.
+    Fallback method to convert a PDF to MusicXML using MuseScore's CLI export.
 
-        Parameters:
-            input_file (Path): Path to PDF file.
-            out_dir (Path): Directory to store the converted MusicXML.
+    Parameters:
+        input_file (Path): Path to PDF file.
+        out_dir (Path): Directory to store the converted MusicXML.
 
-        Returns:
-            list[Path]: List containing the generated .mxl file, or empty list on failure.
+    Returns:
+        list[Path]: List containing the generated .mxl file, or empty list on failure.
 
-        Only works with PDF inputs. Ignored for image files.
-        """
+    Only works with PDF inputs. Ignored for image files.
+    """
 
-    musescore = shutil.which("musescore3") or shutil.which("mscore") or shutil.which("musescore")
+    musescore = (
+        shutil.which("musescore3")
+        or shutil.which("mscore")
+        or shutil.which("musescore")
+    )
     if not musescore or input_file.suffix.lower() != ".pdf":
         return []
     output_xml = out_dir / (input_file.stem + ".mxl")
@@ -231,7 +240,10 @@ def try_musescore_fallback(input_file: Path, out_dir: Path) -> list[Path]:
         log.error("MuseScore fallback failed.")
     return []
 
-def fix_musicxml_with_musescore(input_file: Path, musescore_exe: str = "musescore3") -> Path:
+
+def fix_musicxml_with_musescore(
+    input_file: Path, musescore_exe: str = "musescore3"
+) -> Path:
     """
     Uses MuseScore CLI to re-save the MusicXML, fixing clefs like G-1.
 
@@ -239,34 +251,36 @@ def fix_musicxml_with_musescore(input_file: Path, musescore_exe: str = "musescor
     """
     fixed_file = input_file.with_suffix(".fixed.xml")
 
-    cmd = [
-        musescore_exe,
-        str(input_file),
-        "--export-to",
-        str(fixed_file)
-    ]
+    cmd = [musescore_exe, str(input_file), "--export-to", str(fixed_file)]
 
     subprocess.run(cmd, check=True)
     return fixed_file
 
+
 # === MusicXML → MIDI ===
-def convert_to_midi(mp3_base: str, mxl_files: list[Path], out_dir: Path, bpm: int, transpose_interval: int = 0) -> Path | None:
+def convert_to_midi(
+    mp3_base: str,
+    mxl_files: list[Path],
+    out_dir: Path,
+    bpm: int,
+    transpose_interval: int = 0,
+) -> Path | None:
     """
-        Convert one or more MusicXML files into a single MIDI file.
+    Convert one or more MusicXML files into a single MIDI file.
 
-        Parameters:
-            mp3_base (str): Base name for output MIDI file.
-            mxl_files (list[Path]): List of MusicXML (.mxl/.xml) files.
-            out_dir (Path): Directory to save the MIDI file.
+    Parameters:
+        mp3_base (str): Base name for output MIDI file.
+        mxl_files (list[Path]): List of MusicXML (.mxl/.xml) files.
+        out_dir (Path): Directory to save the MIDI file.
 
-        Returns:
-            Path | None: Path to the generated MIDI file, or None if failed.
+    Returns:
+        Path | None: Path to the generated MIDI file, or None if failed.
 
-        Additional Features:
-        - Removes repeat marks and tempo anomalies.
-        - Inserts consistent tempo (160 BPM).
-        - Applies quantization to fix note timing artifacts.
-        """
+    Additional Features:
+    - Removes repeat marks and tempo anomalies.
+    - Inserts consistent tempo (160 BPM).
+    - Applies quantization to fix note timing artifacts.
+    """
 
     midi_path = out_dir / f"{mp3_base}.mid"
     log.info("Converting MusicXML to MIDI...")
@@ -304,22 +318,23 @@ def convert_to_midi(mp3_base: str, mxl_files: list[Path], out_dir: Path, bpm: in
         log.error(f"MIDI conversion failed: {e}")
         return None
 
+
 # === MIDI → MP3 ===
 def convert_midi_to_mp3(midi_path: Path, mp3_path: Path):
     """
-        Convert a MIDI file to MP3 using FluidSynth and FFmpeg.
+    Convert a MIDI file to MP3 using FluidSynth and FFmpeg.
 
-        Parameters:
-            midi_path (Path): Path to the input .mid file.
-            mp3_path (Path): Output path for the final MP3.
+    Parameters:
+        midi_path (Path): Path to the input .mid file.
+        mp3_path (Path): Output path for the final MP3.
 
-        Workflow:
-        - FluidSynth renders the MIDI to a WAV file using the configured SoundFont.
-        - FFmpeg normalizes and encodes the WAV file to MP3.
-        - The temporary WAV is deleted after use.
+    Workflow:
+    - FluidSynth renders the MIDI to a WAV file using the configured SoundFont.
+    - FFmpeg normalizes and encodes the WAV file to MP3.
+    - The temporary WAV is deleted after use.
 
-        Plays the MP3 if successfully created.
-        """
+    Plays the MP3 if successfully created.
+    """
 
     if not midi_path or not midi_path.exists():
         log.error("No valid MIDI to convert.")
@@ -328,19 +343,38 @@ def convert_midi_to_mp3(midi_path: Path, mp3_path: Path):
     wav_path = midi_path.with_suffix(".wav")
     log.info("Converting MIDI → MP3 with normalization...")
     try:
-        subprocess.run([
-            "fluidsynth", "-ni", str(soundfont_path), str(midi_path),
-            "-F", str(wav_path), "-r", "44100", "-g", "1.0"
-        ], check=True)
-        subprocess.run([
-            "ffmpeg", "-y", "-i", str(wav_path),
-            "-filter:a", "loudnorm",
-            str(mp3_path)
-        ], check=True)
+        subprocess.run(
+            [
+                "fluidsynth",
+                "-ni",
+                str(soundfont_path),
+                str(midi_path),
+                "-F",
+                str(wav_path),
+                "-r",
+                "44100",
+                "-g",
+                "1.0",
+            ],
+            check=True,
+        )
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(wav_path),
+                "-filter:a",
+                "loudnorm",
+                str(mp3_path),
+            ],
+            check=True,
+        )
         wav_path.unlink(missing_ok=True)
         log.info(f"MP3 created: {mp3_path}")
     except subprocess.CalledProcessError:
         log.error("Error converting MIDI to MP3.")
+
 
 def is_raster_pdf(pdf_path: Path) -> bool:
     """
@@ -367,21 +401,23 @@ def is_raster_pdf(pdf_path: Path) -> bool:
 
 
 # === Pipeline ===
-def process_input(input_file: Path, output_dir: Path,  bpm: int = 120, transpose_interval: int = 0):
+def process_input(
+    input_file: Path, output_dir: Path, bpm: int = 120, transpose_interval: int = 0
+):
     """
-        Full pipeline for processing a single sheet music input file.
+    Full pipeline for processing a single sheet music input file.
 
-        Parameters:
-            input_file (Path): Input file (PDF or image).
-            output_dir (Path): Root output directory.
+    Parameters:
+        input_file (Path): Input file (PDF or image).
+        output_dir (Path): Root output directory.
 
-        Workflow:
-        - Converts input to image(s).
-        - Runs Audiveris to generate MusicXML.
-        - Falls back to MuseScore if Audiveris fails.
-        - Converts MusicXML → MIDI → MP3.
-        - Plays final audio output.
-        """
+    Workflow:
+    - Converts input to image(s).
+    - Runs Audiveris to generate MusicXML.
+    - Falls back to MuseScore if Audiveris fails.
+    - Converts MusicXML → MIDI → MP3.
+    - Plays final audio output.
+    """
 
     base_name = input_file.stem
     work_dir = output_dir / base_name
@@ -392,7 +428,9 @@ def process_input(input_file: Path, output_dir: Path,  bpm: int = 120, transpose
     raster_like = False
     if input_file.suffix.lower() == ".pdf":
         raster_like = is_raster_pdf(input_file)
-        log.info(f"PDF is {'raster (screenshot/scan)' if raster_like else 'vector (clean print)'}")
+        log.info(
+            f"PDF is {'raster (screenshot/scan)' if raster_like else 'vector (clean print)'}"
+        )
 
     images = convert_to_images(input_file, image_dir)
     if not images:
@@ -421,6 +459,8 @@ def process_input(input_file: Path, output_dir: Path,  bpm: int = 120, transpose
         log.error("No MusicXML files found.")
         return
 
-    midi_path = convert_to_midi(base_name, mxl_files, work_dir, bpm=bpm, transpose_interval=transpose_interval)
+    midi_path = convert_to_midi(
+        base_name, mxl_files, work_dir, bpm=bpm, transpose_interval=transpose_interval
+    )
     mp3_path = work_dir / f"{base_name}.mp3"
     convert_midi_to_mp3(midi_path, mp3_path)

@@ -1,13 +1,15 @@
 from typing import Annotated
-from fastapi import APIRouter, Depends, File, UploadFile, Form
+
+from fastapi import APIRouter, Depends, File, UploadFile
 from starlette import status
 
-from src.api.v1.music.schemas.response import GetResultResponse, GetInfoResponse
-from src.api.v1.music.services.music import MusicService
 from src.api.v1.music.enums import ToolTypeEnum
+from src.api.v1.music.schemas.response import GetInfoResponse, GetResultResponse
+from src.api.v1.music.services.music import MusicService
 from src.core.utils import BaseResponse
 
 router = APIRouter(prefix="/music", tags=["Music"])
+
 
 @router.get("/tools/{tool}/info", name="Get info")
 async def info(
@@ -19,6 +21,7 @@ async def info(
         data=await service.get_info(tool=tool),
         code=status.HTTP_200_OK,
     )
+
 
 @router.post("/convert/{tool}", name="Convert sheet music to MP3")
 async def convert_music(
@@ -33,6 +36,7 @@ async def convert_music(
     """
 
     return await service.convert(file=file, tool=tool, tempo=tempo, transpose=transpose)
+
 
 @router.get("/tools/{tool}/results", name="Get results")
 async def results(

@@ -23,8 +23,6 @@ pytz = "^2025.2"
 python-jose = {extras = ["cryptography"], version = "^3.5.0"}
 httpx = "^0.28.1"
 python-multipart = "^0.0.20"
-
-# streamlit app's libraries
 dotenv = "^0.9.9"
 music21 = "^9.7.1"
 natsort = "^8.4.0"
