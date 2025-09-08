@@ -6,6 +6,7 @@ from starlette import status
 from src.api.v1.music.enums import ToolTypeEnum
 from src.api.v1.music.schemas.response import GetInfoResponse, GetResultResponse
 from src.api.v1.music.services.music import MusicService
+from src.core.basic_auth import basic_auth
 from src.core.utils import BaseResponse
 
 router = APIRouter(prefix="/music", tags=["Music"])
@@ -15,6 +16,7 @@ router = APIRouter(prefix="/music", tags=["Music"])
 async def info(
     service: Annotated[MusicService, Depends()],
     tool: ToolTypeEnum,
+    _auth: bool = Depends(basic_auth),
 ) -> BaseResponse[GetInfoResponse]:
 
     return BaseResponse(
@@ -30,6 +32,7 @@ async def convert_music(
     file: UploadFile = File(...),
     tempo: int = 120,
     transpose: int = 0,
+    _auth: bool = Depends(basic_auth),
 ):
     """
     Single endpoint to return MP3 file with metadata in headers
@@ -42,6 +45,7 @@ async def convert_music(
 async def results(
     service: Annotated[MusicService, Depends()],
     tool: ToolTypeEnum,
+    _auth: bool = Depends(basic_auth),
 ) -> BaseResponse[GetResultResponse]:
 
     return BaseResponse(

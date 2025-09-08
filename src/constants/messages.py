@@ -7,3 +7,5 @@ INVALID_TOKEN = "Invalid Token!"
 EXPIRED_TOKEN = "Expired Token!"
 
 ERROR = "Error"
+
+INVALID_CRED = "Invalid credentials"

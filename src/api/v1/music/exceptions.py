@@ -8,11 +8,3 @@ class InvalidCredsException(UnauthorizedError):
     """
 
     message = constants.INVALID_CRED
-
-
-class UnauthorizedAccessException(UnauthorizedError):
-    """
-    Raised when a user attempts to access a resource they are not authorized for.
-    """
-
-    message = constants.UNAUTHORIZEDACCESS
