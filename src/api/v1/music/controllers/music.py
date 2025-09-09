@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, UploadFile, Query
 from starlette import status
 
 from src.api.v1.music.enums import ToolTypeEnum
@@ -30,8 +30,8 @@ async def convert_music(
     service: Annotated[MusicService, Depends()],
     tool: ToolTypeEnum,
     file: UploadFile = File(...),
-    tempo: int = 120,
-    transpose: int = 0,
+    tempo: Annotated[int, Query(ge=40, le=240)] = 120,
+    transpose: Annotated[int, Query(ge=-12, le=12)] = 0,
     _auth: bool = Depends(basic_auth),
 ):
     """
